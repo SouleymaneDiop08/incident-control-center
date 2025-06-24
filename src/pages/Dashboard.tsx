@@ -44,6 +44,32 @@ export default function Dashboard() {
 
   if (!profile) return null;
 
+  // Les employés n'ont pas accès au dashboard
+  if (profile.role === 'employee') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+          <div className="text-center py-12">
+            <Shield className="h-16 w-16 text-blue-600 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">
+              Bienvenue, {profile.first_name} {profile.last_name}
+            </h1>
+            <p className="text-gray-600 mb-8">
+              Utilisez le menu de navigation pour déclarer un incident de sécurité.
+            </p>
+            <Button asChild>
+              <Link to="/new-incident" className="flex items-center space-x-2">
+                <FileText className="h-4 w-4" />
+                <span>Déclarer un incident</span>
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -68,7 +94,7 @@ export default function Dashboard() {
             <CardContent>
               <div className="text-2xl font-bold">{stats?.total || 0}</div>
               <p className="text-xs text-muted-foreground">
-                {profile.role === 'employee' ? 'Vos incidents' : 'Tous les incidents'}
+                Tous les incidents
               </p>
             </CardContent>
           </Card>
@@ -115,25 +141,6 @@ export default function Dashboard() {
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {profile.role === 'employee' && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <FileText className="h-5 w-5" />
-                  <span>Déclarer un incident</span>
-                </CardTitle>
-                <CardDescription>
-                  Signalez un nouvel incident de sécurité
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button asChild className="w-full">
-                  <Link to="/new-incident">Nouveau rapport</Link>
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
           {(profile.role === 'manager' || profile.role === 'admin') && (
             <Card>
               <CardHeader>

@@ -69,6 +69,20 @@ export default function AdminUsers() {
       });
 
       if (authError) throw authError;
+
+      // Log the action
+      await supabase.rpc('log_action', {
+        action_name: 'user_created',
+        target_type_name: 'user',
+        target_id_val: authData.user.id,
+        details_val: { 
+          email: userData.email, 
+          role: userData.role,
+          first_name: userData.first_name,
+          last_name: userData.last_name
+        }
+      });
+
       return authData;
     },
     onSuccess: () => {
@@ -98,6 +112,20 @@ export default function AdminUsers() {
   // Delete user mutation
   const deleteUserMutation = useMutation({
     mutationFn: async (userId: string) => {
+      // Log the action before deletion
+      const userToDelete = users?.find(u => u.id === userId);
+      await supabase.rpc('log_action', {
+        action_name: 'user_deleted',
+        target_type_name: 'user',
+        target_id_val: userId,
+        details_val: { 
+          email: userToDelete?.email,
+          role: userToDelete?.role,
+          first_name: userToDelete?.first_name,
+          last_name: userToDelete?.last_name
+        }
+      });
+
       const { error } = await supabase.auth.admin.deleteUser(userId);
       if (error) throw error;
     },

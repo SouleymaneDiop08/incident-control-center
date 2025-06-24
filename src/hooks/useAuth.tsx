@@ -35,8 +35,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth event:', event, session?.user?.email);
         setSession(session);
         setUser(session?.user ?? null);
+        
+        // Log authentication events
+        if (event === 'SIGNED_IN' && session?.user) {
+          setTimeout(async () => {
+            await supabase.rpc('log_action', {
+              action_name: 'user_signed_in',
+              target_type_name: 'auth',
+              target_id_val: session.user.id,
+              details_val: { email: session.user.email }
+            });
+          }, 0);
+        } else if (event === 'SIGNED_OUT') {
+          setTimeout(async () => {
+            await supabase.rpc('log_action', {
+              action_name: 'user_signed_out',
+              target_type_name: 'auth',
+              target_id_val: user?.id || null,
+              details_val: { email: user?.email }
+            });
+          }, 0);
+        }
         
         if (session?.user) {
           // Fetch user profile
@@ -66,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [user?.id, user?.email]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
