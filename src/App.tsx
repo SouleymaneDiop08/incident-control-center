@@ -9,6 +9,9 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import NewIncident from "./pages/NewIncident";
+import IncidentsList from "./pages/IncidentsList";
+import AdminUsers from "./pages/AdminUsers";
+import AdminLogs from "./pages/AdminLogs";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -35,6 +38,21 @@ const App = () => (
             <Route path="/new-incident" element={
               <ProtectedRoute allowedRoles={['employee']}>
                 <NewIncident />
+              </ProtectedRoute>
+            } />
+            <Route path="/incidents" element={
+              <ProtectedRoute allowedRoles={['manager', 'admin']}>
+                <IncidentsList />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/users" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminUsers />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/logs" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminLogs />
               </ProtectedRoute>
             } />
             <Route path="*" element={<NotFound />} />

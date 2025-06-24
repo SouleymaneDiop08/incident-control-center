@@ -1,0 +1,302 @@
+
+import { useState } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { Navbar } from '@/components/Navbar';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { UserPlus, Trash2 } from 'lucide-react';
+import { Database } from '@/integrations/supabase/types';
+
+type UserRole = Database['public']['Enums']['user_role'];
+
+interface Profile {
+  id: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  role: UserRole;
+  created_at: string;
+}
+
+export default function AdminUsers() {
+  const { profile } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [newUser, setNewUser] = useState({
+    email: '',
+    password: '',
+    first_name: '',
+    last_name: '',
+    role: 'employee' as UserRole
+  });
+
+  // Fetch all users
+  const { data: users, isLoading } = useQuery({
+    queryKey: ['admin-users'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data as Profile[];
+    },
+    enabled: profile?.role === 'admin'
+  });
+
+  // Add user mutation
+  const addUserMutation = useMutation({
+    mutationFn: async (userData: typeof newUser) => {
+      // Create user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: userData.email,
+        password: userData.password,
+        user_metadata: {
+          first_name: userData.first_name,
+          last_name: userData.last_name,
+          role: userData.role
+        }
+      });
+
+      if (authError) throw authError;
+      return authData;
+    },
+    onSuccess: () => {
+      toast({
+        title: "Succès",
+        description: "Utilisateur ajouté avec succès"
+      });
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      setIsAddDialogOpen(false);
+      setNewUser({
+        email: '',
+        password: '',
+        first_name: '',
+        last_name: '',
+        role: 'employee'
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erreur",
+        description: error.message || "Erreur lors de l'ajout de l'utilisateur",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Delete user mutation
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const { error } = await supabase.auth.admin.deleteUser(userId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({
+        title: "Succès",
+        description: "Utilisateur supprimé avec succès"
+      });
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erreur",
+        description: error.message || "Erreur lors de la suppression",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const handleAddUser = () => {
+    addUserMutation.mutate(newUser);
+  };
+
+  const handleDeleteUser = (userId: string) => {
+    if (window.confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?')) {
+      deleteUserMutation.mutate(userId);
+    }
+  };
+
+  if (profile?.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="max-w-7xl mx-auto py-6 px-4">
+          <p className="text-red-600">Accès refusé. Cette page est réservée aux administrateurs.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
+      
+      <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div className="mb-8 flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Gestion des utilisateurs</h1>
+            <p className="text-gray-600">Gérer les comptes utilisateurs de l'application</p>
+          </div>
+          
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="flex items-center space-x-2">
+                <UserPlus className="h-4 w-4" />
+                <span>Ajouter un utilisateur</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Ajouter un nouvel utilisateur</DialogTitle>
+                <DialogDescription>
+                  Créer un nouveau compte utilisateur dans le système
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={newUser.email}
+                    onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                    placeholder="utilisateur@exemple.com"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="password">Mot de passe</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+                    placeholder="Mot de passe"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="first_name">Prénom</Label>
+                  <Input
+                    id="first_name"
+                    value={newUser.first_name}
+                    onChange={(e) => setNewUser({...newUser, first_name: e.target.value})}
+                    placeholder="Prénom"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="last_name">Nom</Label>
+                  <Input
+                    id="last_name"
+                    value={newUser.last_name}
+                    onChange={(e) => setNewUser({...newUser, last_name: e.target.value})}
+                    placeholder="Nom"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="role">Rôle</Label>
+                  <Select value={newUser.role} onValueChange={(value: UserRole) => setNewUser({...newUser, role: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sélectionner un rôle" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="employee">Employé</SelectItem>
+                      <SelectItem value="manager">Manager</SelectItem>
+                      <SelectItem value="admin">Administrateur</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <Button 
+                  onClick={handleAddUser} 
+                  className="w-full"
+                  disabled={addUserMutation.isPending}
+                >
+                  {addUserMutation.isPending ? 'Création...' : 'Créer l\'utilisateur'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Liste des utilisateurs</CardTitle>
+            <CardDescription>
+              Tous les utilisateurs enregistrés dans le système
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="flex justify-center p-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nom complet</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Rôle</TableHead>
+                    <TableHead>Créé le</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {users?.map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell>
+                        {user.first_name && user.last_name 
+                          ? `${user.first_name} ${user.last_name}`
+                          : 'Non renseigné'
+                        }
+                      </TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          user.role === 'admin' ? 'bg-red-100 text-red-800' :
+                          user.role === 'manager' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-blue-100 text-blue-800'
+                        }`}>
+                          {user.role === 'admin' ? 'Administrateur' :
+                           user.role === 'manager' ? 'Manager' : 'Employé'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {new Date(user.created_at).toLocaleDateString('fr-FR')}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteUser(user.id)}
+                          disabled={deleteUserMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
