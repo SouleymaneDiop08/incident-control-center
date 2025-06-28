@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Eye, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
+import { Eye, CheckCircle, Clock, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Database } from '@/integrations/supabase/types';
 
 type IncidentStatus = Database['public']['Enums']['incident_status'];
@@ -44,44 +44,78 @@ export default function IncidentsList() {
   const [newStatus, setNewStatus] = useState<IncidentStatus>('nouveau');
   const [resolutionComment, setResolutionComment] = useState('');
 
-  const { data: incidents, isLoading, error } = useQuery({
+  const { data: incidents, isLoading, error, refetch } = useQuery({
     queryKey: ['incidents'],
     queryFn: async () => {
-      console.log('Fetching incidents...');
-      // Récupérer d'abord les incidents
-      const { data: incidentsData, error: incidentsError } = await supabase
-        .from('incidents')
-        .select('*')
-        .order('created_at', { ascending: false });
+      console.log('Fetching incidents for profile:', profile);
       
-      if (incidentsError) {
-        console.error('Error fetching incidents:', incidentsError);
-        throw incidentsError;
+      if (!profile) {
+        throw new Error('Profil utilisateur non disponible');
       }
 
-      // Récupérer les profils des créateurs séparément
-      const creatorIds = [...new Set(incidentsData.map(incident => incident.created_by))];
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, email')
-        .in('id', creatorIds);
-
-      if (profilesError) {
-        console.error('Error fetching profiles:', profilesError);
-        // Ne pas faire échouer toute la requête si les profils ne peuvent pas être récupérés
+      // Vérifier les permissions
+      if (profile.role !== 'IT' && profile.role !== 'admin') {
+        throw new Error('Accès non autorisé');
       }
 
-      // Joindre les données des profils aux incidents
-      const incidentsWithCreators = incidentsData.map(incident => ({
-        ...incident,
-        creator: profiles?.find(profile => profile.id === incident.created_by) || null
-      }));
-      
-      console.log('Incidents fetched:', incidentsWithCreators);
-      return incidentsWithCreators as Incident[];
+      try {
+        // Récupérer les incidents avec une seule requête optimisée
+        const { data: incidentsData, error: incidentsError } = await supabase
+          .from('incidents')
+          .select(`
+            id,
+            title,
+            description,
+            category,
+            status,
+            incident_date,
+            resolution_comment,
+            created_at,
+            created_by,
+            assigned_to
+          `)
+          .order('created_at', { ascending: false });
+        
+        if (incidentsError) {
+          console.error('Error fetching incidents:', incidentsError);
+          throw incidentsError;
+        }
+
+        if (!incidentsData || incidentsData.length === 0) {
+          console.log('No incidents found');
+          return [];
+        }
+
+        // Récupérer les profils des créateurs
+        const creatorIds = [...new Set(incidentsData.map(incident => incident.created_by))];
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, email')
+          .in('id', creatorIds);
+
+        if (profilesError) {
+          console.error('Error fetching profiles:', profilesError);
+          // Continuer sans les profils plutôt que de faire échouer
+        }
+
+        // Joindre les données des profils aux incidents
+        const incidentsWithCreators = incidentsData.map(incident => ({
+          ...incident,
+          creator: profiles?.find(profile => profile.id === incident.created_by) || null
+        }));
+        
+        console.log(`Successfully fetched ${incidentsWithCreators.length} incidents`);
+        return incidentsWithCreators as Incident[];
+      } catch (error) {
+        console.error('Error in incidents query:', error);
+        throw error;
+      }
     },
-    enabled: profile?.role === 'IT' || profile?.role === 'admin',
-    refetchInterval: 30000 // Rafraîchir toutes les 30 secondes
+    enabled: !!(profile && (profile.role === 'IT' || profile.role === 'admin')),
+    refetchInterval: 30000,
+    staleTime: 10000,
+    retry: 3,
+    retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
   const updateIncidentMutation = useMutation({
@@ -118,12 +152,11 @@ export default function IncidentsList() {
       } catch (logError) {
         console.error('Error logging incident update:', logError);
       }
-      
-      console.log('Incident updated successfully');
     },
     onSuccess: () => {
       toast.success('Statut de l\'incident mis à jour');
       queryClient.invalidateQueries({ queryKey: ['incidents'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       setIsDetailDialogOpen(false);
       setResolutionComment('');
     },
@@ -168,6 +201,19 @@ export default function IncidentsList() {
     return labels[status] || status;
   };
 
+  const getStatusBadgeVariant = (status: IncidentStatus) => {
+    switch (status) {
+      case 'nouveau':
+        return 'destructive';
+      case 'en_cours':
+        return 'secondary';
+      case 'resolu':
+        return 'default';
+      default:
+        return 'outline';
+    }
+  };
+
   const openIncidentDetail = (incident: Incident) => {
     setSelectedIncident(incident);
     setNewStatus(incident.status);
@@ -185,53 +231,79 @@ export default function IncidentsList() {
     });
   };
 
-  if (profile?.role !== 'IT' && profile?.role !== 'admin') {
+  if (!profile) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
         <div className="max-w-7xl mx-auto py-6 px-4">
-          <p className="text-red-600">Accès refusé. Cette page est réservée aux IT et administrateurs.</p>
+          <div className="text-center py-12">
+            <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+            <p className="text-red-600">Chargement du profil utilisateur...</p>
+          </div>
         </div>
       </div>
     );
   }
 
-  console.log('Current profile:', profile);
-  console.log('Incidents data:', incidents);
-  console.log('Loading state:', isLoading);
-  console.log('Error state:', error);
+  if (profile.role !== 'IT' && profile.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="max-w-7xl mx-auto py-6 px-4">
+          <div className="text-center py-12">
+            <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+            <p className="text-red-600 text-lg font-semibold">Accès refusé</p>
+            <p className="text-gray-600 mt-2">Cette page est réservée aux IT et administrateurs.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
       
       <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Gestion des incidents</h1>
-          <p className="text-gray-600">Consulter et traiter les incidents de sécurité</p>
+        <div className="mb-8 flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Gestion des incidents</h1>
+            <p className="text-gray-600">Consulter et traiter les incidents de sécurité</p>
+          </div>
+          <Button 
+            onClick={() => refetch()} 
+            variant="outline" 
+            size="sm"
+            disabled={isLoading}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+            Actualiser
+          </Button>
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle>Liste des incidents</CardTitle>
             <CardDescription>
-              Tous les incidents rapportés dans le système
+              {incidents?.length || 0} incident(s) trouvé(s) dans le système
             </CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="flex justify-center p-8">
+              <div className="flex justify-center items-center p-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <span className="ml-2 text-gray-600">Chargement des incidents...</span>
               </div>
             ) : error ? (
-              <div className="text-center py-8 text-red-500">
-                <p>Erreur lors du chargement des incidents:</p>
-                <p className="text-sm mt-2">{error.message}</p>
+              <div className="text-center py-8">
+                <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+                <p className="text-red-500 font-semibold mb-2">Erreur lors du chargement</p>
+                <p className="text-sm text-gray-600 mb-4">{error.message}</p>
                 <Button 
-                  onClick={() => queryClient.invalidateQueries({ queryKey: ['incidents'] })}
+                  onClick={() => refetch()}
                   variant="outline"
-                  className="mt-4"
                 >
+                  <RefreshCw className="h-4 w-4 mr-2" />
                   Réessayer
                 </Button>
               </div>
@@ -242,61 +314,91 @@ export default function IncidentsList() {
                 <p className="text-sm">Les incidents déclarés apparaîtront ici</p>
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Titre</TableHead>
-                    <TableHead>Catégorie</TableHead>
-                    <TableHead>Statut</TableHead>
-                    <TableHead>Rapporté par</TableHead>
-                    <TableHead>Date incident</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {incidents.map((incident) => (
-                    <TableRow key={incident.id}>
-                      <TableCell className="font-medium">{incident.title}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">
-                          {getCategoryLabel(incident.category)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          {getStatusIcon(incident.status)}
-                          <span>{getStatusLabel(incident.status)}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {incident.creator ? 
-                          `${incident.creator.first_name || ''} ${incident.creator.last_name || ''}`.trim() || incident.creator.email
-                          : 'Utilisateur inconnu'
-                        }
-                      </TableCell>
-                      <TableCell>
-                        {new Date(incident.incident_date).toLocaleDateString('fr-FR')}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openIncidentDetail(incident)}
-                        >
-                          <Eye className="h-4 w-4 mr-1" />
-                          Détails
-                        </Button>
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Titre</TableHead>
+                      <TableHead>Catégorie</TableHead>
+                      <TableHead>Statut</TableHead>
+                      <TableHead>Rapporté par</TableHead>
+                      <TableHead>Date incident</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {incidents.map((incident) => (
+                      <TableRow key={incident.id} className="hover:bg-gray-50">
+                        <TableCell className="font-medium max-w-xs">
+                          <div className="truncate" title={incident.title}>
+                            {incident.title}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {getCategoryLabel(incident.category)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            {getStatusIcon(incident.status)}
+                            <Badge variant={getStatusBadgeVariant(incident.status)}>
+                              {getStatusLabel(incident.status)}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            {incident.creator ? (
+                              <>
+                                <div className="font-medium">
+                                  {`${incident.creator.first_name || ''} ${incident.creator.last_name || ''}`.trim() || 'Nom non renseigné'}
+                                </div>
+                                <div className="text-gray-500 text-xs">
+                                  {incident.creator.email}
+                                </div>
+                              </>
+                            ) : (
+                              <span className="text-gray-400 italic">Utilisateur inconnu</span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            {new Date(incident.incident_date).toLocaleDateString('fr-FR', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric'
+                            })}
+                            <div className="text-xs text-gray-500">
+                              {new Date(incident.incident_date).toLocaleTimeString('fr-FR', {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openIncidentDetail(incident)}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            Détails
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>
 
         <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Détails de l'incident</DialogTitle>
               <DialogDescription>
@@ -307,38 +409,48 @@ export default function IncidentsList() {
             {selectedIncident && (
               <div className="space-y-4">
                 <div>
-                  <h3 className="font-medium">Titre</h3>
-                  <p className="text-gray-600">{selectedIncident.title}</p>
+                  <h3 className="font-medium text-sm text-gray-500 uppercase tracking-wide">Titre</h3>
+                  <p className="text-gray-900 mt-1">{selectedIncident.title}</p>
                 </div>
                 
                 <div>
-                  <h3 className="font-medium">Description</h3>
-                  <p className="text-gray-600 whitespace-pre-wrap">{selectedIncident.description}</p>
+                  <h3 className="font-medium text-sm text-gray-500 uppercase tracking-wide">Description</h3>
+                  <p className="text-gray-900 whitespace-pre-wrap mt-1">{selectedIncident.description}</p>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <h3 className="font-medium">Catégorie</h3>
-                    <p className="text-gray-600">{getCategoryLabel(selectedIncident.category)}</p>
+                    <h3 className="font-medium text-sm text-gray-500 uppercase tracking-wide">Catégorie</h3>
+                    <Badge variant="outline" className="mt-1">
+                      {getCategoryLabel(selectedIncident.category)}
+                    </Badge>
                   </div>
                   <div>
-                    <h3 className="font-medium">Date de l'incident</h3>
-                    <p className="text-gray-600">{new Date(selectedIncident.incident_date).toLocaleString('fr-FR')}</p>
+                    <h3 className="font-medium text-sm text-gray-500 uppercase tracking-wide">Date de l'incident</h3>
+                    <p className="text-gray-900 mt-1">
+                      {new Date(selectedIncident.incident_date).toLocaleString('fr-FR')}
+                    </p>
                   </div>
                 </div>
                 
                 <div>
-                  <h3 className="font-medium">Rapporté par</h3>
-                  <p className="text-gray-600">
-                    {selectedIncident.creator ? 
-                      `${selectedIncident.creator.first_name || ''} ${selectedIncident.creator.last_name || ''}`.trim() || selectedIncident.creator.email
-                      : 'Utilisateur inconnu'
-                    }
-                  </p>
+                  <h3 className="font-medium text-sm text-gray-500 uppercase tracking-wide">Rapporté par</h3>
+                  <div className="mt-1">
+                    {selectedIncident.creator ? (
+                      <>
+                        <p className="text-gray-900 font-medium">
+                          {`${selectedIncident.creator.first_name || ''} ${selectedIncident.creator.last_name || ''}`.trim() || 'Nom non renseigné'}
+                        </p>
+                        <p className="text-gray-600 text-sm">{selectedIncident.creator.email}</p>
+                      </>
+                    ) : (
+                      <p className="text-gray-400 italic">Utilisateur inconnu</p>
+                    )}
+                  </div>
                 </div>
                 
                 <div>
-                  <h3 className="font-medium">Statut</h3>
+                  <h3 className="font-medium text-sm text-gray-500 uppercase tracking-wide mb-2">Statut</h3>
                   <Select value={newStatus} onValueChange={(value: IncidentStatus) => setNewStatus(value)}>
                     <SelectTrigger className="w-full">
                       <SelectValue />
@@ -352,22 +464,39 @@ export default function IncidentsList() {
                 </div>
                 
                 <div>
-                  <h3 className="font-medium">Commentaire de résolution</h3>
+                  <h3 className="font-medium text-sm text-gray-500 uppercase tracking-wide mb-2">Commentaire de résolution</h3>
                   <Textarea
                     value={resolutionComment}
                     onChange={(e) => setResolutionComment(e.target.value)}
                     placeholder="Ajouter un commentaire sur la résolution..."
                     rows={3}
+                    className="w-full"
                   />
                 </div>
                 
-                <Button 
-                  onClick={handleUpdateIncident}
-                  className="w-full"
-                  disabled={updateIncidentMutation.isPending}
-                >
-                  {updateIncidentMutation.isPending ? 'Mise à jour...' : 'Mettre à jour l\'incident'}
-                </Button>
+                <div className="flex space-x-2 pt-4">
+                  <Button 
+                    onClick={handleUpdateIncident}
+                    className="flex-1"
+                    disabled={updateIncidentMutation.isPending}
+                  >
+                    {updateIncidentMutation.isPending ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Mise à jour...
+                      </>
+                    ) : (
+                      'Mettre à jour l\'incident'
+                    )}
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setIsDetailDialogOpen(false)}
+                    disabled={updateIncidentMutation.isPending}
+                  >
+                    Annuler
+                  </Button>
+                </div>
               </div>
             )}
           </DialogContent>

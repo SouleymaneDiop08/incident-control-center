@@ -12,11 +12,13 @@ export default function Dashboard() {
   const { profile } = useAuth();
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['dashboard-stats'],
+    queryKey: ['dashboard-stats', profile?.id],
     queryFn: async () => {
       console.log('Fetching dashboard stats for profile:', profile);
       
-      if (profile?.role === 'employé') {
+      if (!profile) return null;
+
+      if (profile.role === 'employé') {
         const { data: myIncidents, error } = await supabase
           .from('incidents')
           .select('status')
@@ -52,10 +54,11 @@ export default function Dashboard() {
       }
     },
     enabled: !!profile,
-    refetchInterval: 30000 // Refresh every 30 seconds
+    refetchInterval: 30000,
+    staleTime: 10000
   });
 
-  const { data: userStats } = useQuery({
+  const { data: userStats, isLoading: userStatsLoading } = useQuery({
     queryKey: ['user-stats'],
     queryFn: async () => {
       if (profile?.role !== 'admin') return null;
@@ -77,12 +80,13 @@ export default function Dashboard() {
       return { totalUsers, admins, its, employees };
     },
     enabled: profile?.role === 'admin',
-    refetchInterval: 60000 // Refresh every minute
+    refetchInterval: 60000,
+    staleTime: 30000
   });
 
   if (!profile) return null;
 
-  // Les employés n'ont plus accès au dashboard - ils voient seulement un message de bienvenue
+  // Les employés voient seulement le message de bienvenue
   if (profile.role === 'employé') {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -131,9 +135,15 @@ export default function Dashboard() {
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{statsLoading ? '...' : stats?.total || 0}</div>
+              <div className="text-2xl font-bold">
+                {statsLoading ? (
+                  <div className="animate-pulse bg-gray-200 h-6 w-8 rounded"></div>
+                ) : (
+                  stats?.total || 0
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">
-                Tous les incidents
+                {profile.role === 'admin' ? 'Tous les incidents' : 'Vos incidents'}
               </p>
             </CardContent>
           </Card>
@@ -144,7 +154,13 @@ export default function Dashboard() {
               <AlertTriangle className="h-4 w-4 text-red-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">{statsLoading ? '...' : stats?.nouveau || 0}</div>
+              <div className="text-2xl font-bold text-red-600">
+                {statsLoading ? (
+                  <div className="animate-pulse bg-gray-200 h-6 w-8 rounded"></div>
+                ) : (
+                  stats?.nouveau || 0
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">
                 À traiter
               </p>
@@ -157,7 +173,13 @@ export default function Dashboard() {
               <Clock className="h-4 w-4 text-yellow-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">{statsLoading ? '...' : stats?.enCours || 0}</div>
+              <div className="text-2xl font-bold text-yellow-600">
+                {statsLoading ? (
+                  <div className="animate-pulse bg-gray-200 h-6 w-8 rounded"></div>
+                ) : (
+                  stats?.enCours || 0
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">
                 En traitement
               </p>
@@ -170,7 +192,13 @@ export default function Dashboard() {
               <CheckCircle className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{statsLoading ? '...' : stats?.resolu || 0}</div>
+              <div className="text-2xl font-bold text-green-600">
+                {statsLoading ? (
+                  <div className="animate-pulse bg-gray-200 h-6 w-8 rounded"></div>
+                ) : (
+                  stats?.resolu || 0
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Terminés
               </p>
@@ -179,7 +207,7 @@ export default function Dashboard() {
         </div>
 
         {/* User Statistics for Admin */}
-        {profile.role === 'admin' && userStats && (
+        {profile.role === 'admin' && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -187,7 +215,13 @@ export default function Dashboard() {
                 <Users className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{userStats.totalUsers}</div>
+                <div className="text-2xl font-bold">
+                  {userStatsLoading ? (
+                    <div className="animate-pulse bg-gray-200 h-6 w-8 rounded"></div>
+                  ) : (
+                    userStats?.totalUsers || 0
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   Tous les comptes
                 </p>
@@ -200,7 +234,13 @@ export default function Dashboard() {
                 <Users className="h-4 w-4 text-blue-500" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-blue-600">{userStats.employees}</div>
+                <div className="text-2xl font-bold text-blue-600">
+                  {userStatsLoading ? (
+                    <div className="animate-pulse bg-gray-200 h-6 w-8 rounded"></div>
+                  ) : (
+                    userStats?.employees || 0
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   Comptes employés
                 </p>
@@ -213,7 +253,13 @@ export default function Dashboard() {
                 <Activity className="h-4 w-4 text-yellow-500" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-yellow-600">{userStats.its}</div>
+                <div className="text-2xl font-bold text-yellow-600">
+                  {userStatsLoading ? (
+                    <div className="animate-pulse bg-gray-200 h-6 w-8 rounded"></div>
+                  ) : (
+                    userStats?.its || 0
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   Comptes IT
                 </p>
@@ -226,7 +272,13 @@ export default function Dashboard() {
                 <Shield className="h-4 w-4 text-red-500" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-red-600">{userStats.admins}</div>
+                <div className="text-2xl font-bold text-red-600">
+                  {userStatsLoading ? (
+                    <div className="animate-pulse bg-gray-200 h-6 w-8 rounded"></div>
+                  ) : (
+                    userStats?.admins || 0
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   Comptes admin
                 </p>
