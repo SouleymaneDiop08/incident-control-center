@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { UserPlus, Trash2 } from 'lucide-react';
 import { Database } from '@/integrations/supabase/types';
 
@@ -28,7 +28,6 @@ interface Profile {
 
 export default function AdminUsers() {
   const { profile } = useAuth();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newUser, setNewUser] = useState({
@@ -48,7 +47,10 @@ export default function AdminUsers() {
         .select('*')
         .order('created_at', { ascending: false });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching users:', error);
+        throw error;
+      }
       return data as Profile[];
     },
     enabled: profile?.role === 'admin'
@@ -57,10 +59,13 @@ export default function AdminUsers() {
   // Add user mutation
   const addUserMutation = useMutation({
     mutationFn: async (userData: typeof newUser) => {
+      console.log('Creating user with data:', userData);
+      
       // Create user in Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: userData.email,
         password: userData.password,
+        email_confirm: true,
         user_metadata: {
           first_name: userData.first_name,
           last_name: userData.last_name,
@@ -68,28 +73,34 @@ export default function AdminUsers() {
         }
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        console.error('Auth error:', authError);
+        throw authError;
+      }
+
+      console.log('User created successfully:', authData);
 
       // Log the action
-      await supabase.rpc('log_action', {
-        action_name: 'user_created',
-        target_type_name: 'user',
-        target_id_val: authData.user.id,
-        details_val: { 
-          email: userData.email, 
-          role: userData.role,
-          first_name: userData.first_name,
-          last_name: userData.last_name
-        }
-      });
+      try {
+        await supabase.rpc('log_action', {
+          action_name: 'user_created',
+          target_type_name: 'user',
+          target_id_val: authData.user.id,
+          details_val: { 
+            email: userData.email, 
+            role: userData.role,
+            first_name: userData.first_name,
+            last_name: userData.last_name
+          }
+        });
+      } catch (logError) {
+        console.error('Error logging user creation:', logError);
+      }
 
       return authData;
     },
     onSuccess: () => {
-      toast({
-        title: "Succès",
-        description: "Utilisateur ajouté avec succès"
-      });
+      toast.success('Utilisateur ajouté avec succès');
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       setIsAddDialogOpen(false);
       setNewUser({
@@ -101,10 +112,9 @@ export default function AdminUsers() {
       });
     },
     onError: (error: any) => {
-      toast({
-        title: "Erreur",
-        description: error.message || "Erreur lors de l'ajout de l'utilisateur",
-        variant: "destructive"
+      console.error('Add user error:', error);
+      toast.error('Erreur lors de l\'ajout de l\'utilisateur', {
+        description: error.message || 'Une erreur est survenue'
       });
     }
   });
@@ -114,38 +124,43 @@ export default function AdminUsers() {
     mutationFn: async (userId: string) => {
       // Log the action before deletion
       const userToDelete = users?.find(u => u.id === userId);
-      await supabase.rpc('log_action', {
-        action_name: 'user_deleted',
-        target_type_name: 'user',
-        target_id_val: userId,
-        details_val: { 
-          email: userToDelete?.email,
-          role: userToDelete?.role,
-          first_name: userToDelete?.first_name,
-          last_name: userToDelete?.last_name
-        }
-      });
+      
+      try {
+        await supabase.rpc('log_action', {
+          action_name: 'user_deleted',
+          target_type_name: 'user',
+          target_id_val: userId,
+          details_val: { 
+            email: userToDelete?.email,
+            role: userToDelete?.role,
+            first_name: userToDelete?.first_name,
+            last_name: userToDelete?.last_name
+          }
+        });
+      } catch (logError) {
+        console.error('Error logging user deletion:', logError);
+      }
 
       const { error } = await supabase.auth.admin.deleteUser(userId);
       if (error) throw error;
     },
     onSuccess: () => {
-      toast({
-        title: "Succès",
-        description: "Utilisateur supprimé avec succès"
-      });
+      toast.success('Utilisateur supprimé avec succès');
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
     },
     onError: (error: any) => {
-      toast({
-        title: "Erreur",
-        description: error.message || "Erreur lors de la suppression",
-        variant: "destructive"
+      console.error('Delete user error:', error);
+      toast.error('Erreur lors de la suppression', {
+        description: error.message || 'Une erreur est survenue'
       });
     }
   });
 
   const handleAddUser = () => {
+    if (!newUser.email || !newUser.password || !newUser.first_name || !newUser.last_name) {
+      toast.error('Veuillez remplir tous les champs requis');
+      return;
+    }
     addUserMutation.mutate(newUser);
   };
 
@@ -194,44 +209,48 @@ export default function AdminUsers() {
               
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email">Email *</Label>
                   <Input
                     id="email"
                     type="email"
                     value={newUser.email}
                     onChange={(e) => setNewUser({...newUser, email: e.target.value})}
                     placeholder="utilisateur@exemple.com"
+                    required
                   />
                 </div>
                 
                 <div>
-                  <Label htmlFor="password">Mot de passe</Label>
+                  <Label htmlFor="password">Mot de passe *</Label>
                   <Input
                     id="password"
                     type="password"
                     value={newUser.password}
                     onChange={(e) => setNewUser({...newUser, password: e.target.value})}
-                    placeholder="Mot de passe"
+                    placeholder="Mot de passe (min. 6 caractères)"
+                    required
                   />
                 </div>
                 
                 <div>
-                  <Label htmlFor="first_name">Prénom</Label>
+                  <Label htmlFor="first_name">Prénom *</Label>
                   <Input
                     id="first_name"
                     value={newUser.first_name}
                     onChange={(e) => setNewUser({...newUser, first_name: e.target.value})}
                     placeholder="Prénom"
+                    required
                   />
                 </div>
                 
                 <div>
-                  <Label htmlFor="last_name">Nom</Label>
+                  <Label htmlFor="last_name">Nom *</Label>
                   <Input
                     id="last_name"
                     value={newUser.last_name}
                     onChange={(e) => setNewUser({...newUser, last_name: e.target.value})}
                     placeholder="Nom"
+                    required
                   />
                 </div>
                 
@@ -273,7 +292,7 @@ export default function AdminUsers() {
               <div className="flex justify-center p-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
               </div>
-            ) : (
+            ) : users && users.length > 0 ? (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -285,7 +304,7 @@ export default function AdminUsers() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users?.map((user) => (
+                  {users.map((user) => (
                     <TableRow key={user.id}>
                       <TableCell>
                         {user.first_name && user.last_name 
@@ -321,6 +340,10 @@ export default function AdminUsers() {
                   ))}
                 </TableBody>
               </Table>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                Aucun utilisateur trouvé
+              </div>
             )}
           </CardContent>
         </Card>

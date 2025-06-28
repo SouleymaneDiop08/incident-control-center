@@ -42,34 +42,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Log authentication events
         if (event === 'SIGNED_IN' && session?.user) {
           setTimeout(async () => {
-            await supabase.rpc('log_action', {
-              action_name: 'user_signed_in',
-              target_type_name: 'auth',
-              target_id_val: session.user.id,
-              details_val: { email: session.user.email }
-            });
+            try {
+              await supabase.rpc('log_action', {
+                action_name: 'user_signed_in',
+                target_type_name: 'auth',
+                target_id_val: session.user.id,
+                details_val: { email: session.user.email }
+              });
+            } catch (error) {
+              console.error('Error logging sign in:', error);
+            }
           }, 0);
         } else if (event === 'SIGNED_OUT') {
           setTimeout(async () => {
-            await supabase.rpc('log_action', {
-              action_name: 'user_signed_out',
-              target_type_name: 'auth',
-              target_id_val: user?.id || null,
-              details_val: { email: user?.email }
-            });
+            try {
+              await supabase.rpc('log_action', {
+                action_name: 'user_signed_out',
+                target_type_name: 'auth',
+                target_id_val: user?.id || null,
+                details_val: { email: user?.email }
+              });
+            } catch (error) {
+              console.error('Error logging sign out:', error);
+            }
           }, 0);
         }
         
         if (session?.user) {
           // Fetch user profile
           setTimeout(async () => {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .single();
-            setProfile(profile);
-            setLoading(false);
+            try {
+              const { data: profile, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .single();
+              
+              if (error) {
+                console.error('Error fetching profile:', error);
+              } else {
+                setProfile(profile);
+              }
+            } catch (error) {
+              console.error('Error in profile fetch:', error);
+            } finally {
+              setLoading(false);
+            }
           }, 0);
         } else {
           setProfile(null);
@@ -91,15 +109,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user?.id, user?.email]);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    return { error };
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      return { error };
+    } catch (error) {
+      console.error('Sign in error:', error);
+      return { error };
+    }
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Sign out error:', error);
+      }
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
   };
 
   return (

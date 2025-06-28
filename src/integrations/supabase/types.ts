@@ -184,7 +184,7 @@ export type Database = {
         | "perte_donnees"
         | "autre"
       incident_status: "nouveau" | "en_cours" | "resolu"
-      user_role: "employee" | "manager" | "admin"
+      user_role: "employé" | "IT" | "admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -308,7 +308,7 @@ export const Constants = {
         "autre",
       ],
       incident_status: ["nouveau", "en_cours", "resolu"],
-      user_role: ["employee", "manager", "admin"],
+      user_role: ["employé", "IT", "admin"],
     },
   },
 } as const

@@ -60,14 +60,12 @@ export default function Auth() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
               <div className="flex items-start">
-                <AlertCircle className="h-5 w-5 text-blue-400 mt-0.5 mr-2" />
-                <div className="text-sm text-blue-700">
-                  <p className="font-medium">Comptes de démonstration :</p>
-                  <p>Admin: admin@example.com / password</p>
-                  <p>Manager: manager@example.com / password</p>
-                  <p>Employee: employee@example.com / password</p>
+                <AlertCircle className="h-5 w-5 text-amber-400 mt-0.5 mr-2" />
+                <div className="text-sm text-amber-700">
+                  <p className="font-medium">Vous ne pouvez pas vous connecter ou vous n'avez pas de compte ?</p>
+                  <p>Veuillez vous approcher de l'administrateur.</p>
                 </div>
               </div>
             </div>

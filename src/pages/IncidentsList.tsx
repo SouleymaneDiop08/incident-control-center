@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { Eye, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
 import { Database } from '@/integrations/supabase/types';
 
@@ -38,16 +38,16 @@ interface Incident {
 
 export default function IncidentsList() {
   const { profile } = useAuth();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [newStatus, setNewStatus] = useState<IncidentStatus>('nouveau');
   const [resolutionComment, setResolutionComment] = useState('');
 
-  const { data: incidents, isLoading } = useQuery({
+  const { data: incidents, isLoading, error } = useQuery({
     queryKey: ['incidents'],
     queryFn: async () => {
+      console.log('Fetching incidents...');
       const { data, error } = await supabase
         .from('incidents')
         .select(`
@@ -60,7 +60,12 @@ export default function IncidentsList() {
         `)
         .order('created_at', { ascending: false });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching incidents:', error);
+        throw error;
+      }
+      
+      console.log('Incidents fetched:', data);
       return data as Incident[];
     },
     enabled: profile?.role === 'manager' || profile?.role === 'admin'
@@ -85,27 +90,27 @@ export default function IncidentsList() {
       if (error) throw error;
 
       // Log the action
-      await supabase.rpc('log_action', {
-        action_name: `incident_status_updated_to_${status}`,
-        target_type_name: 'incident',
-        target_id_val: incidentId,
-        details_val: { new_status: status, comment }
-      });
+      try {
+        await supabase.rpc('log_action', {
+          action_name: `incident_status_updated_to_${status}`,
+          target_type_name: 'incident',
+          target_id_val: incidentId,
+          details_val: { new_status: status, comment }
+        });
+      } catch (logError) {
+        console.error('Error logging incident update:', logError);
+      }
     },
     onSuccess: () => {
-      toast({
-        title: "Succès",
-        description: "Statut de l'incident mis à jour"
-      });
+      toast.success('Statut de l\'incident mis à jour');
       queryClient.invalidateQueries({ queryKey: ['incidents'] });
       setIsDetailDialogOpen(false);
       setResolutionComment('');
     },
     onError: (error: any) => {
-      toast({
-        title: "Erreur",
-        description: error.message || "Erreur lors de la mise à jour",
-        variant: "destructive"
+      console.error('Update incident error:', error);
+      toast.error('Erreur lors de la mise à jour', {
+        description: error.message || 'Une erreur est survenue'
       });
     }
   });
@@ -171,6 +176,10 @@ export default function IncidentsList() {
     );
   }
 
+  if (error) {
+    console.error('Query error:', error);
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -193,7 +202,11 @@ export default function IncidentsList() {
               <div className="flex justify-center p-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
               </div>
-            ) : (
+            ) : error ? (
+              <div className="text-center py-8 text-red-500">
+                Erreur lors du chargement des incidents: {error.message}
+              </div>
+            ) : incidents && incidents.length > 0 ? (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -206,7 +219,7 @@ export default function IncidentsList() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {incidents?.map((incident) => (
+                  {incidents.map((incident) => (
                     <TableRow key={incident.id}>
                       <TableCell className="font-medium">{incident.title}</TableCell>
                       <TableCell>
@@ -243,6 +256,10 @@ export default function IncidentsList() {
                   ))}
                 </TableBody>
               </Table>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                Aucun incident trouvé
+              </div>
             )}
           </CardContent>
         </Card>
