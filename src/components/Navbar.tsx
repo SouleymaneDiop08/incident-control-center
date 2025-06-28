@@ -31,14 +31,14 @@ export function Navbar() {
               Dashboard
             </Link>
             
-            {profile.role === 'employee' && (
+            {profile.role === 'employé' && (
               <Link to="/new-incident" className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-1">
                 <FileText className="h-4 w-4" />
                 <span>Nouvel Incident</span>
               </Link>
             )}
 
-            {(profile.role === 'manager' || profile.role === 'admin') && (
+            {(profile.role === 'IT' || profile.role === 'admin') && (
               <Link to="/incidents" className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-1">
                 <FileText className="h-4 w-4" />
                 <span>Incidents</span>

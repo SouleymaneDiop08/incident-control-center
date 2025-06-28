@@ -14,7 +14,7 @@ export default function Dashboard() {
   const { data: stats } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
-      if (profile?.role === 'employee') {
+      if (profile?.role === 'employé') {
         const { data: myIncidents } = await supabase
           .from('incidents')
           .select('status')
@@ -45,7 +45,7 @@ export default function Dashboard() {
   if (!profile) return null;
 
   // Les employés n'ont pas accès au dashboard
-  if (profile.role === 'employee') {
+  if (profile.role === 'employé') {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
@@ -141,7 +141,7 @@ export default function Dashboard() {
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {(profile.role === 'manager' || profile.role === 'admin') && (
+          {(profile.role === 'IT' || profile.role === 'admin') && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">

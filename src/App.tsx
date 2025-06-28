@@ -36,12 +36,12 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="/new-incident" element={
-              <ProtectedRoute allowedRoles={['employee']}>
+              <ProtectedRoute allowedRoles={['employé']}>
                 <NewIncident />
               </ProtectedRoute>
             } />
             <Route path="/incidents" element={
-              <ProtectedRoute allowedRoles={['manager', 'admin']}>
+              <ProtectedRoute allowedRoles={['IT', 'admin']}>
                 <IncidentsList />
               </ProtectedRoute>
             } />

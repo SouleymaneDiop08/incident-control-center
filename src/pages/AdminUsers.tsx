@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Navbar } from '@/components/Navbar';
@@ -35,7 +34,7 @@ export default function AdminUsers() {
     password: '',
     first_name: '',
     last_name: '',
-    role: 'employee' as UserRole
+    role: 'employé' as UserRole
   });
 
   // Fetch all users
@@ -60,6 +59,11 @@ export default function AdminUsers() {
   const addUserMutation = useMutation({
     mutationFn: async (userData: typeof newUser) => {
       console.log('Creating user with data:', userData);
+      
+      // Validate required fields
+      if (!userData.email || !userData.password || !userData.first_name || !userData.last_name) {
+        throw new Error('Tous les champs sont requis');
+      }
       
       // Create user in Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -108,7 +112,7 @@ export default function AdminUsers() {
         password: '',
         first_name: '',
         last_name: '',
-        role: 'employee'
+        role: 'employé'
       });
     },
     onError: (error: any) => {
@@ -261,8 +265,8 @@ export default function AdminUsers() {
                       <SelectValue placeholder="Sélectionner un rôle" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="employee">Employé</SelectItem>
-                      <SelectItem value="manager">Manager</SelectItem>
+                      <SelectItem value="employé">Employé</SelectItem>
+                      <SelectItem value="IT">IT</SelectItem>
                       <SelectItem value="admin">Administrateur</SelectItem>
                     </SelectContent>
                   </Select>
@@ -316,11 +320,11 @@ export default function AdminUsers() {
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                           user.role === 'admin' ? 'bg-red-100 text-red-800' :
-                          user.role === 'manager' ? 'bg-yellow-100 text-yellow-800' :
+                          user.role === 'IT' ? 'bg-yellow-100 text-yellow-800' :
                           'bg-blue-100 text-blue-800'
                         }`}>
                           {user.role === 'admin' ? 'Administrateur' :
-                           user.role === 'manager' ? 'Manager' : 'Employé'}
+                           user.role === 'IT' ? 'IT' : 'Employé'}
                         </span>
                       </TableCell>
                       <TableCell>

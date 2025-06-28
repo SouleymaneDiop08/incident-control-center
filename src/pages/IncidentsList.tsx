@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Navbar } from '@/components/Navbar';
@@ -68,7 +67,7 @@ export default function IncidentsList() {
       console.log('Incidents fetched:', data);
       return data as Incident[];
     },
-    enabled: profile?.role === 'manager' || profile?.role === 'admin'
+    enabled: profile?.role === 'IT' || profile?.role === 'admin'
   });
 
   const updateIncidentMutation = useMutation({
@@ -165,12 +164,12 @@ export default function IncidentsList() {
     });
   };
 
-  if (profile?.role !== 'manager' && profile?.role !== 'admin') {
+  if (profile?.role !== 'IT' && profile?.role !== 'admin') {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
         <div className="max-w-7xl mx-auto py-6 px-4">
-          <p className="text-red-600">Accès refusé. Cette page est réservée aux managers et administrateurs.</p>
+          <p className="text-red-600">Accès refusé. Cette page est réservée aux IT et administrateurs.</p>
         </div>
       </div>
     );
