@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Navbar } from '@/components/Navbar';
@@ -38,9 +39,10 @@ export default function AdminUsers() {
   });
 
   // Fetch all users
-  const { data: users, isLoading } = useQuery({
+  const { data: users, isLoading, error } = useQuery({
     queryKey: ['admin-users'],
     queryFn: async () => {
+      console.log('Fetching users...');
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -50,12 +52,13 @@ export default function AdminUsers() {
         console.error('Error fetching users:', error);
         throw error;
       }
+      console.log('Users fetched:', data);
       return data as Profile[];
     },
     enabled: profile?.role === 'admin'
   });
 
-  // Add user mutation
+  // Add user mutation - Using direct profile creation instead of admin API
   const addUserMutation = useMutation({
     mutationFn: async (userData: typeof newUser) => {
       console.log('Creating user with data:', userData);
@@ -65,15 +68,16 @@ export default function AdminUsers() {
         throw new Error('Tous les champs sont requis');
       }
       
-      // Create user in Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      // Create user using standard signUp (not admin API)
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email: userData.email,
         password: userData.password,
-        email_confirm: true,
-        user_metadata: {
-          first_name: userData.first_name,
-          last_name: userData.last_name,
-          role: userData.role
+        options: {
+          data: {
+            first_name: userData.first_name,
+            last_name: userData.last_name,
+            role: userData.role
+          }
         }
       });
 
@@ -89,7 +93,7 @@ export default function AdminUsers() {
         await supabase.rpc('log_action', {
           action_name: 'user_created',
           target_type_name: 'user',
-          target_id_val: authData.user.id,
+          target_id_val: authData.user?.id || null,
           details_val: { 
             email: userData.email, 
             role: userData.role,
@@ -123,7 +127,7 @@ export default function AdminUsers() {
     }
   });
 
-  // Delete user mutation
+  // Delete user mutation - Using profile deletion instead of admin API
   const deleteUserMutation = useMutation({
     mutationFn: async (userId: string) => {
       // Log the action before deletion
@@ -145,7 +149,12 @@ export default function AdminUsers() {
         console.error('Error logging user deletion:', logError);
       }
 
-      const { error } = await supabase.auth.admin.deleteUser(userId);
+      // Delete profile (this will cascade to auth.users if properly configured)
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
+        
       if (error) throw error;
     },
     onSuccess: () => {
@@ -295,6 +304,10 @@ export default function AdminUsers() {
             {isLoading ? (
               <div className="flex justify-center p-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : error ? (
+              <div className="text-center py-8 text-red-500">
+                Erreur lors du chargement des utilisateurs: {error.message}
               </div>
             ) : users && users.length > 0 ? (
               <Table>

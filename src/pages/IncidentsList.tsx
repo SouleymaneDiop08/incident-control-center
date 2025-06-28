@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Navbar } from '@/components/Navbar';
@@ -72,6 +73,8 @@ export default function IncidentsList() {
 
   const updateIncidentMutation = useMutation({
     mutationFn: async ({ incidentId, status, comment }: { incidentId: string; status: IncidentStatus; comment?: string }) => {
+      console.log('Updating incident:', { incidentId, status, comment });
+      
       const updateData: any = { 
         status,
         updated_at: new Date().toISOString()
@@ -86,7 +89,10 @@ export default function IncidentsList() {
         .update(updateData)
         .eq('id', incidentId);
       
-      if (error) throw error;
+      if (error) {
+        console.error('Update error:', error);
+        throw error;
+      }
 
       // Log the action
       try {
@@ -99,6 +105,8 @@ export default function IncidentsList() {
       } catch (logError) {
         console.error('Error logging incident update:', logError);
       }
+      
+      console.log('Incident updated successfully');
     },
     onSuccess: () => {
       toast.success('Statut de l\'incident mis à jour');
@@ -175,9 +183,10 @@ export default function IncidentsList() {
     );
   }
 
-  if (error) {
-    console.error('Query error:', error);
-  }
+  console.log('Current profile:', profile);
+  console.log('Incidents data:', incidents);
+  console.log('Loading state:', isLoading);
+  console.log('Error state:', error);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -203,9 +212,23 @@ export default function IncidentsList() {
               </div>
             ) : error ? (
               <div className="text-center py-8 text-red-500">
-                Erreur lors du chargement des incidents: {error.message}
+                <p>Erreur lors du chargement des incidents:</p>
+                <p className="text-sm mt-2">{error.message}</p>
+                <Button 
+                  onClick={() => queryClient.invalidateQueries({ queryKey: ['incidents'] })}
+                  variant="outline"
+                  className="mt-4"
+                >
+                  Réessayer
+                </Button>
               </div>
-            ) : incidents && incidents.length > 0 ? (
+            ) : !incidents || incidents.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                <p className="text-lg font-medium">Aucun incident trouvé</p>
+                <p className="text-sm">Les incidents déclarés apparaîtront ici</p>
+              </div>
+            ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -255,10 +278,6 @@ export default function IncidentsList() {
                   ))}
                 </TableBody>
               </Table>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                Aucun incident trouvé
-              </div>
             )}
           </CardContent>
         </Card>

@@ -11,14 +11,21 @@ import { supabase } from '@/integrations/supabase/client';
 export default function Dashboard() {
   const { profile } = useAuth();
 
-  const { data: stats } = useQuery({
+  const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
+      console.log('Fetching dashboard stats for profile:', profile);
+      
       if (profile?.role === 'employé') {
-        const { data: myIncidents } = await supabase
+        const { data: myIncidents, error } = await supabase
           .from('incidents')
           .select('status')
           .eq('created_by', profile.id);
+        
+        if (error) {
+          console.error('Error fetching employee incidents:', error);
+          throw error;
+        }
         
         const total = myIncidents?.length || 0;
         const nouveau = myIncidents?.filter(i => i.status === 'nouveau').length || 0;
@@ -27,9 +34,14 @@ export default function Dashboard() {
 
         return { total, nouveau, enCours, resolu };
       } else {
-        const { data: allIncidents } = await supabase
+        const { data: allIncidents, error } = await supabase
           .from('incidents')
           .select('status');
+        
+        if (error) {
+          console.error('Error fetching all incidents:', error);
+          throw error;
+        }
         
         const total = allIncidents?.length || 0;
         const nouveau = allIncidents?.filter(i => i.status === 'nouveau').length || 0;
@@ -39,12 +51,38 @@ export default function Dashboard() {
         return { total, nouveau, enCours, resolu };
       }
     },
-    enabled: !!profile
+    enabled: !!profile,
+    refetchInterval: 30000 // Refresh every 30 seconds
+  });
+
+  const { data: userStats } = useQuery({
+    queryKey: ['user-stats'],
+    queryFn: async () => {
+      if (profile?.role !== 'admin') return null;
+      
+      const { data: users, error } = await supabase
+        .from('profiles')
+        .select('role');
+      
+      if (error) {
+        console.error('Error fetching user stats:', error);
+        throw error;
+      }
+      
+      const totalUsers = users?.length || 0;
+      const admins = users?.filter(u => u.role === 'admin').length || 0;
+      const its = users?.filter(u => u.role === 'IT').length || 0;
+      const employees = users?.filter(u => u.role === 'employé').length || 0;
+      
+      return { totalUsers, admins, its, employees };
+    },
+    enabled: profile?.role === 'admin',
+    refetchInterval: 60000 // Refresh every minute
   });
 
   if (!profile) return null;
 
-  // Les employés n'ont pas accès au dashboard
+  // Les employés n'ont pas accès au dashboard - ils sont redirigés vers la page de déclaration
   if (profile.role === 'employé') {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -58,9 +96,48 @@ export default function Dashboard() {
             <p className="text-gray-600 mb-8">
               Utilisez le menu de navigation pour déclarer un incident de sécurité.
             </p>
-            <Button asChild>
+            
+            {/* Stats pour l'employé */}
+            {stats && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 max-w-4xl mx-auto">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Mes incidents</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{statsLoading ? '...' : stats.total}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Nouveaux</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-red-600">{statsLoading ? '...' : stats.nouveau}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">En cours</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-yellow-600">{statsLoading ? '...' : stats.enCours}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Résolus</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-green-600">{statsLoading ? '...' : stats.resolu}</div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+            
+            <Button asChild size="lg">
               <Link to="/new-incident" className="flex items-center space-x-2">
-                <FileText className="h-4 w-4" />
+                <FileText className="h-5 w-5" />
                 <span>Déclarer un incident</span>
               </Link>
             </Button>
@@ -92,7 +169,7 @@ export default function Dashboard() {
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats?.total || 0}</div>
+              <div className="text-2xl font-bold">{statsLoading ? '...' : stats?.total || 0}</div>
               <p className="text-xs text-muted-foreground">
                 Tous les incidents
               </p>
@@ -105,7 +182,7 @@ export default function Dashboard() {
               <AlertTriangle className="h-4 w-4 text-red-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">{stats?.nouveau || 0}</div>
+              <div className="text-2xl font-bold text-red-600">{statsLoading ? '...' : stats?.nouveau || 0}</div>
               <p className="text-xs text-muted-foreground">
                 À traiter
               </p>
@@ -118,7 +195,7 @@ export default function Dashboard() {
               <Clock className="h-4 w-4 text-yellow-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">{stats?.enCours || 0}</div>
+              <div className="text-2xl font-bold text-yellow-600">{statsLoading ? '...' : stats?.enCours || 0}</div>
               <p className="text-xs text-muted-foreground">
                 En traitement
               </p>
@@ -131,13 +208,70 @@ export default function Dashboard() {
               <CheckCircle className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{stats?.resolu || 0}</div>
+              <div className="text-2xl font-bold text-green-600">{statsLoading ? '...' : stats?.resolu || 0}</div>
               <p className="text-xs text-muted-foreground">
                 Terminés
               </p>
             </CardContent>
           </Card>
         </div>
+
+        {/* User Statistics for Admin */}
+        {profile.role === 'admin' && userStats && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Utilisateurs</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{userStats.totalUsers}</div>
+                <p className="text-xs text-muted-foreground">
+                  Tous les comptes
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Employés</CardTitle>
+                <Users className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-600">{userStats.employees}</div>
+                <p className="text-xs text-muted-foreground">
+                  Comptes employés
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">IT</CardTitle>
+                <Activity className="h-4 w-4 text-yellow-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-yellow-600">{userStats.its}</div>
+                <p className="text-xs text-muted-foreground">
+                  Comptes IT
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Admins</CardTitle>
+                <Shield className="h-4 w-4 text-red-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">{userStats.admins}</div>
+                <p className="text-xs text-muted-foreground">
+                  Comptes admin
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
