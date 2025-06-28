@@ -82,7 +82,7 @@ export default function Dashboard() {
 
   if (!profile) return null;
 
-  // Les employés n'ont pas accès au dashboard - ils sont redirigés vers la page de déclaration
+  // Les employés n'ont plus accès au dashboard - ils voient seulement un message de bienvenue
   if (profile.role === 'employé') {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -96,44 +96,6 @@ export default function Dashboard() {
             <p className="text-gray-600 mb-8">
               Utilisez le menu de navigation pour déclarer un incident de sécurité.
             </p>
-            
-            {/* Stats pour l'employé */}
-            {stats && (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 max-w-4xl mx-auto">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Mes incidents</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{statsLoading ? '...' : stats.total}</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Nouveaux</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-red-600">{statsLoading ? '...' : stats.nouveau}</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">En cours</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-yellow-600">{statsLoading ? '...' : stats.enCours}</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Résolus</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-green-600">{statsLoading ? '...' : stats.resolu}</div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
             
             <Button asChild size="lg">
               <Link to="/new-incident" className="flex items-center space-x-2">

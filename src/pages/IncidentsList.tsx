@@ -29,7 +29,7 @@ interface Incident {
   created_at: string;
   created_by: string;
   assigned_to: string | null;
-  profiles: {
+  creator?: {
     first_name: string | null;
     last_name: string | null;
     email: string;
@@ -48,27 +48,40 @@ export default function IncidentsList() {
     queryKey: ['incidents'],
     queryFn: async () => {
       console.log('Fetching incidents...');
-      const { data, error } = await supabase
+      // Récupérer d'abord les incidents
+      const { data: incidentsData, error: incidentsError } = await supabase
         .from('incidents')
-        .select(`
-          *,
-          profiles!incidents_created_by_fkey (
-            first_name,
-            last_name,
-            email
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
       
-      if (error) {
-        console.error('Error fetching incidents:', error);
-        throw error;
+      if (incidentsError) {
+        console.error('Error fetching incidents:', incidentsError);
+        throw incidentsError;
       }
+
+      // Récupérer les profils des créateurs séparément
+      const creatorIds = [...new Set(incidentsData.map(incident => incident.created_by))];
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, email')
+        .in('id', creatorIds);
+
+      if (profilesError) {
+        console.error('Error fetching profiles:', profilesError);
+        // Ne pas faire échouer toute la requête si les profils ne peuvent pas être récupérés
+      }
+
+      // Joindre les données des profils aux incidents
+      const incidentsWithCreators = incidentsData.map(incident => ({
+        ...incident,
+        creator: profiles?.find(profile => profile.id === incident.created_by) || null
+      }));
       
-      console.log('Incidents fetched:', data);
-      return data as Incident[];
+      console.log('Incidents fetched:', incidentsWithCreators);
+      return incidentsWithCreators as Incident[];
     },
-    enabled: profile?.role === 'IT' || profile?.role === 'admin'
+    enabled: profile?.role === 'IT' || profile?.role === 'admin',
+    refetchInterval: 30000 // Rafraîchir toutes les 30 secondes
   });
 
   const updateIncidentMutation = useMutation({
@@ -256,8 +269,8 @@ export default function IncidentsList() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {incident.profiles ? 
-                          `${incident.profiles.first_name || ''} ${incident.profiles.last_name || ''}`.trim() || incident.profiles.email
+                        {incident.creator ? 
+                          `${incident.creator.first_name || ''} ${incident.creator.last_name || ''}`.trim() || incident.creator.email
                           : 'Utilisateur inconnu'
                         }
                       </TableCell>
@@ -317,8 +330,8 @@ export default function IncidentsList() {
                 <div>
                   <h3 className="font-medium">Rapporté par</h3>
                   <p className="text-gray-600">
-                    {selectedIncident.profiles ? 
-                      `${selectedIncident.profiles.first_name || ''} ${selectedIncident.profiles.last_name || ''}`.trim() || selectedIncident.profiles.email
+                    {selectedIncident.creator ? 
+                      `${selectedIncident.creator.first_name || ''} ${selectedIncident.creator.last_name || ''}`.trim() || selectedIncident.creator.email
                       : 'Utilisateur inconnu'
                     }
                   </p>
