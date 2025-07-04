@@ -47,7 +47,12 @@ export function useIncidents(profile: any, isIT: boolean, isAdmin: boolean, isEm
             resolution_comment,
             created_at,
             created_by,
-            assigned_to
+            assigned_to,
+            creator:profiles!incidents_created_by_fkey(
+              first_name,
+              last_name,
+              email
+            )
           `);
 
         // Si l'utilisateur est uniquement employé, ne voir que ses incidents
@@ -68,25 +73,8 @@ export function useIncidents(profile: any, isIT: boolean, isAdmin: boolean, isEm
           return [];
         }
 
-        // Récupérer les profils des créateurs
-        const creatorIds = [...new Set(incidentsData.map(incident => incident.created_by))];
-        const { data: profiles, error: profilesError } = await supabase
-          .from('profiles')
-          .select('id, first_name, last_name, email')
-          .in('id', creatorIds);
-
-        if (profilesError) {
-          console.error('Error fetching profiles:', profilesError);
-          // Ne pas faire échouer la requête si on ne peut pas récupérer les profils
-        }
-
-        const incidentsWithCreators = incidentsData.map(incident => ({
-          ...incident,
-          creator: profiles?.find(profile => profile.id === incident.created_by) || null
-        }));
-        
-        console.log(`Successfully fetched ${incidentsWithCreators.length} incidents`);
-        return incidentsWithCreators as Incident[];
+        console.log(`Successfully fetched ${incidentsData.length} incidents with creators`);
+        return incidentsData as Incident[];
       } catch (error) {
         console.error('Error in incidents query:', error);
         throw error;
