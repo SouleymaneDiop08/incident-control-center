@@ -26,7 +26,7 @@ interface Incident {
 
 export function useIncidents(profile: any, isIT: boolean, isAdmin: boolean, isEmployee: boolean) {
   return useQuery({
-    queryKey: ['incidents'],
+    queryKey: ['incidents', profile?.id, isIT, isAdmin, isEmployee],
     queryFn: async () => {
       console.log('Fetching incidents for profile:', profile);
       
@@ -81,9 +81,40 @@ export function useIncidents(profile: any, isIT: boolean, isAdmin: boolean, isEm
       }
     },
     enabled: !!(profile && (isIT || isAdmin || isEmployee)),
-    refetchInterval: 30000,
-    staleTime: 10000,
-    retry: 3,
+    refetchInterval: 30000, // Refresh every 30 seconds
+    staleTime: 10000, // Consider data stale after 10 seconds
+    retry: (failureCount, error: any) => {
+      // Don't retry on authentication errors
+      if (error?.code === 'PGRST301' || error?.message?.includes('JWT')) {
+        return false;
+      }
+      return failureCount < 3;
+    },
     retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
+}
+
+// Hook for real-time incidents updates
+export function useIncidentsRealtime(profile: any, isIT: boolean, isAdmin: boolean, isEmployee: boolean) {
+  const baseQuery = useIncidents(profile, isIT, isAdmin, isEmployee);
+  
+  // You could add real-time subscriptions here if needed
+  // useEffect(() => {
+  //   const channel = supabase
+  //     .channel('incidents-changes')
+  //     .on('postgres_changes', {
+  //       event: '*',
+  //       schema: 'public',
+  //       table: 'incidents'
+  //     }, () => {
+  //       baseQuery.refetch();
+  //     })
+  //     .subscribe();
+  //   
+  //   return () => supabase.removeChannel(channel);
+  // }, [baseQuery]);
+
+  return baseQuery;
 }

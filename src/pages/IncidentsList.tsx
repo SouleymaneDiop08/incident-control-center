@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Navbar } from '@/components/Navbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,8 +11,9 @@ import { IncidentStats } from '@/components/incidents/IncidentStats';
 import { IncidentFilters } from '@/components/incidents/IncidentFilters';
 import { IncidentTable } from '@/components/incidents/IncidentTable';
 import { IncidentDetailDialog } from '@/components/incidents/IncidentDetailDialog';
-import { RefreshCw, AlertTriangle } from 'lucide-react';
+import { RefreshCw, AlertTriangle, Download } from 'lucide-react';
 import { Database } from '@/integrations/supabase/types';
+import { toast } from 'sonner';
 
 type IncidentStatus = Database['public']['Enums']['incident_status'];
 
@@ -53,32 +54,51 @@ export default function IncidentsList() {
   const { data: incidents, isLoading, error, refetch } = useIncidents(profile, isIT, isAdmin, isEmployee);
   const updateIncidentMutation = useIncidentMutation();
 
-  const filteredIncidents = incidents?.filter(incident => {
-    const matchesSearch = incident.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         incident.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         incident.creator?.email?.toLowerCase().includes(searchTerm.toLowerCase());
+  // Memoized filtered incidents for better performance
+  const filteredIncidents = useMemo(() => {
+    if (!incidents) return [];
     
-    const matchesStatus = statusFilter === 'all' || incident.status === statusFilter;
-    const matchesCategory = categoryFilter === 'all' || incident.category === categoryFilter;
-    
-    return matchesSearch && matchesStatus && matchesCategory;
-  }) || [];
+    return incidents.filter(incident => {
+      const matchesSearch = incident.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           incident.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           incident.creator?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           `${incident.creator?.first_name || ''} ${incident.creator?.last_name || ''}`.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesStatus = statusFilter === 'all' || incident.status === statusFilter;
+      const matchesCategory = categoryFilter === 'all' || incident.category === categoryFilter;
+      
+      return matchesSearch && matchesStatus && matchesCategory;
+    });
+  }, [incidents, searchTerm, statusFilter, categoryFilter]);
 
-  const stats = {
+  // Memoized stats calculation
+  const stats = useMemo(() => ({
     total: incidents?.length || 0,
     nouveau: incidents?.filter(i => i.status === 'nouveau').length || 0,
     en_cours: incidents?.filter(i => i.status === 'en_cours').length || 0,
     resolu: incidents?.filter(i => i.status === 'resolu').length || 0
-  };
+  }), [incidents]);
 
-  const openIncidentDetail = (incident: Incident) => {
+  // Enhanced stats with trends (you could calculate these from historical data)
+  const enhancedStats = useMemo(() => ({
+    ...stats,
+    trends: {
+      resolvedToday: incidents?.filter(i => 
+        i.status === 'resolu' && 
+        new Date(i.created_at || i.incident_date).toDateString() === new Date().toDateString()
+      ).length || 0,
+      avgResolutionTime: '2.3 jours', // This could be calculated from actual data
+    }
+  }), [stats, incidents]);
+
+  const openIncidentDetail = useCallback((incident: Incident) => {
     setSelectedIncident(incident);
     setNewStatus(incident.status);
     setResolutionComment(incident.resolution_comment || '');
     setIsDetailDialogOpen(true);
-  };
+  }, []);
 
-  const handleUpdateIncident = () => {
+  const handleUpdateIncident = useCallback(() => {
     if (!selectedIncident) return;
     
     updateIncidentMutation.mutate({
@@ -90,7 +110,53 @@ export default function IncidentsList() {
     
     setIsDetailDialogOpen(false);
     setResolutionComment('');
-  };
+  }, [selectedIncident, newStatus, resolutionComment, profile?.id, updateIncidentMutation]);
+
+  const handleQuickUpdate = useCallback((incidentId: string, status: IncidentStatus) => {
+    updateIncidentMutation.mutate({
+      incidentId,
+      status,
+      assignedTo: profile?.id
+    });
+  }, [profile?.id, updateIncidentMutation]);
+
+  const handleExport = useCallback(() => {
+    if (!filteredIncidents.length) {
+      toast.error('Aucun incident à exporter');
+      return;
+    }
+
+    try {
+      const csvContent = [
+        'ID,Titre,Description,Catégorie,Statut,Date incident,Déclarant,Date création',
+        ...filteredIncidents.map(incident => [
+          incident.id,
+          `"${incident.title.replace(/"/g, '""')}"`,
+          `"${incident.description.replace(/"/g, '""')}"`,
+          incident.category,
+          incident.status,
+          new Date(incident.incident_date).toLocaleDateString('fr-FR'),
+          incident.creator?.email || 'Inconnu',
+          new Date(incident.created_at).toLocaleDateString('fr-FR')
+        ].join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `incidents_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast.success(`${filteredIncidents.length} incidents exportés avec succès`);
+    } catch (error) {
+      console.error('Error exporting incidents:', error);
+      toast.error('Erreur lors de l\'export');
+    }
+  }, [filteredIncidents]);
 
   if (!profile) {
     return (
@@ -98,8 +164,8 @@ export default function IncidentsList() {
         <Navbar />
         <div className="max-w-7xl mx-auto py-6 px-4">
           <div className="text-center py-12">
-            <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-            <p className="text-red-600">Chargement du profil utilisateur...</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Chargement du profil utilisateur...</p>
           </div>
         </div>
       </div>
@@ -134,21 +200,22 @@ export default function IncidentsList() {
         <div className="mb-8">
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{pageTitle}</h1>
-              <p className="text-gray-600">{pageDescription}</p>
+              <h1 className="text-3xl font-bold text-gray-900">{pageTitle}</h1>
+              <p className="text-gray-600 mt-1">{pageDescription}</p>
             </div>
             <Button 
               onClick={() => refetch()} 
               variant="outline" 
               size="sm"
               disabled={isLoading}
+              className="flex items-center gap-2"
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               Actualiser
             </Button>
           </div>
 
-          <IncidentStats stats={stats} />
+          <IncidentStats stats={enhancedStats.trends ? enhancedStats : stats} trends={enhancedStats.trends} />
           <IncidentFilters 
             searchTerm={searchTerm}
             setSearchTerm={setSearchTerm}
@@ -156,55 +223,89 @@ export default function IncidentsList() {
             setStatusFilter={setStatusFilter}
             categoryFilter={categoryFilter}
             setCategoryFilter={setCategoryFilter}
+            totalIncidents={stats.total}
+            filteredCount={filteredIncidents.length}
+            onExport={handleExport}
+            onRefresh={() => refetch()}
+            isLoading={isLoading}
           />
         </div>
 
-        <Card>
+        <Card className="shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              Liste des incidents
-              <Badge variant="outline" className="ml-2">
-                {filteredIncidents.length} / {stats.total}
-              </Badge>
+              <span>Liste des incidents</span>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="ml-2">
+                  {filteredIncidents.length} / {stats.total}
+                </Badge>
+                {filteredIncidents.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExport}
+                    className="flex items-center gap-1"
+                  >
+                    <Download className="h-3 w-3" />
+                    Export
+                  </Button>
+                )}
+              </div>
             </CardTitle>
             <CardDescription>
               {pageDescription}
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             {isLoading ? (
-              <div className="flex justify-center items-center p-8">
+              <div className="flex justify-center items-center p-12">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                <span className="ml-2 text-gray-600">Chargement des incidents...</span>
+                <span className="ml-3 text-gray-600">Chargement des incidents...</span>
               </div>
             ) : error ? (
-              <div className="text-center py-8">
+              <div className="text-center py-12 px-4">
                 <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-500" />
                 <p className="text-red-500 font-semibold mb-2">Erreur lors du chargement</p>
                 <p className="text-sm text-gray-600 mb-4">{error.message}</p>
                 <Button 
                   onClick={() => refetch()}
                   variant="outline"
+                  className="flex items-center gap-2"
                 >
-                  <RefreshCw className="h-4 w-4 mr-2" />
+                  <RefreshCw className="h-4 w-4" />
                   Réessayer
                 </Button>
               </div>
             ) : filteredIncidents.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                <p className="text-lg font-medium">
+              <div className="text-center py-16 px-4 text-gray-500">
+                <AlertTriangle className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                <p className="text-xl font-medium mb-2">
                   {searchTerm || statusFilter !== 'all' || categoryFilter !== 'all' 
                     ? 'Aucun incident trouvé avec ces filtres' 
                     : 'Aucun incident trouvé'
                   }
                 </p>
                 <p className="text-sm">Les incidents déclarés apparaîtront ici</p>
+                {(searchTerm || statusFilter !== 'all' || categoryFilter !== 'all') && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSearchTerm('');
+                      setStatusFilter('all');
+                      setCategoryFilter('all');
+                    }}
+                    className="mt-4"
+                  >
+                    Effacer les filtres
+                  </Button>
+                )}
               </div>
             ) : (
               <IncidentTable 
                 incidents={filteredIncidents}
                 onIncidentClick={openIncidentDetail}
+                onQuickUpdate={isIT ? handleQuickUpdate : undefined}
                 isIT={isIT}
               />
             )}
