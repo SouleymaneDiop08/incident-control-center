@@ -6,7 +6,7 @@ import { Shield, LogOut, Users, FileText, Activity } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function Navbar() {
-  const { user, profile, signOut, hasRole } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -23,53 +23,40 @@ export function Navbar() {
 
   if (!user || !profile) return null;
 
-  const isEmployee = hasRole('employé');
-  const isIT = hasRole('IT');
-  const isAdmin = hasRole('admin');
-
-  // Détermine la page d'accueil selon les rôles
-  const getHomePage = () => {
-    if (isEmployee && !isIT && !isAdmin) return '/new-incident';
-    return '/dashboard';
-  };
-
   return (
     <nav className="bg-white shadow-sm border-b">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <Link to={getHomePage()} className="flex items-center space-x-2">
+            <Link to={profile.role === 'employé' ? '/new-incident' : '/dashboard'} className="flex items-center space-x-2">
               <Shield className="h-8 w-8 text-blue-600" />
               <span className="text-xl font-bold text-gray-900">SecureIncident</span>
             </Link>
           </div>
 
           <div className="flex items-center space-x-4">
-            {/* Dashboard link pour IT et admin */}
-            {(isIT || isAdmin) && (
+            {/* Dashboard link only for IT and admin */}
+            {(profile.role === 'IT' || profile.role === 'admin') && (
               <Link to="/dashboard" className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
                 Dashboard
               </Link>
             )}
             
-            {/* Nouvel incident pour les employés */}
-            {isEmployee && (
+            {profile.role === 'employé' && (
               <Link to="/new-incident" className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-1">
                 <FileText className="h-4 w-4" />
                 <span>Nouvel Incident</span>
               </Link>
             )}
 
-            {/* Liste des incidents pour IT et admin */}
-            {(isIT || isAdmin) && (
+            {(profile.role === 'IT' || profile.role === 'admin') && (
               <Link to="/incidents" className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-1">
                 <FileText className="h-4 w-4" />
                 <span>Incidents</span>
               </Link>
             )}
 
-            {/* Administration pour les admins uniquement */}
-            {isAdmin && (
+            {profile.role === 'admin' && (
               <>
                 <Link to="/admin/users" className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-1">
                   <Users className="h-4 w-4" />
@@ -84,17 +71,9 @@ export function Navbar() {
 
             <div className="flex items-center space-x-2 text-sm text-gray-600">
               <span>{profile.first_name} {profile.last_name}</span>
-              <div className="flex space-x-1">
-                {profile.roles?.map((role, index) => (
-                  <span key={role} className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
-                    {role}
-                  </span>
-                )) || (
-                  <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
-                    {profile.role}
-                  </span>
-                )}
-              </div>
+              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+                {profile.role}
+              </span>
             </div>
 
             <Button onClick={handleSignOut} variant="outline" size="sm" className="flex items-center space-x-1">
