@@ -58,7 +58,7 @@ export default function AdminUsers() {
     enabled: profile?.role === 'admin'
   });
 
-  // Add user mutation - Using direct profile creation instead of admin API
+  // Add user mutation - Fixed for multi-role system
   const addUserMutation = useMutation({
     mutationFn: async (userData: typeof newUser) => {
       console.log('Creating user with data:', userData);
@@ -68,7 +68,7 @@ export default function AdminUsers() {
         throw new Error('Tous les champs sont requis');
       }
       
-      // Create user using standard signUp (not admin API)
+      // Create user using standard signUp
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: userData.email,
         password: userData.password,
@@ -86,6 +86,27 @@ export default function AdminUsers() {
         throw authError;
       }
 
+      if (!authData.user) {
+        throw new Error('Erreur lors de la création de l\'utilisateur');
+      }
+
+      // Wait a bit for the trigger to create the profile
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Add the role to the user_roles table
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .insert({
+          user_id: authData.user.id,
+          role: userData.role
+        });
+
+      if (roleError) {
+        console.error('Role assignment error:', roleError);
+        // Don't throw here as the user is created, just log the error
+        console.warn('User created but role assignment failed:', roleError);
+      }
+
       console.log('User created successfully:', authData);
 
       // Log the action
@@ -93,7 +114,7 @@ export default function AdminUsers() {
         await supabase.rpc('log_action', {
           action_name: 'user_created',
           target_type_name: 'user',
-          target_id_val: authData.user?.id || null,
+          target_id_val: authData.user.id,
           details_val: { 
             email: userData.email, 
             role: userData.role,
@@ -127,7 +148,7 @@ export default function AdminUsers() {
     }
   });
 
-  // Delete user mutation - Using profile deletion instead of admin API
+  // Delete user mutation - Updated for multi-role system
   const deleteUserMutation = useMutation({
     mutationFn: async (userId: string) => {
       // Log the action before deletion
@@ -147,6 +168,16 @@ export default function AdminUsers() {
         });
       } catch (logError) {
         console.error('Error logging user deletion:', logError);
+      }
+
+      // Delete user roles first
+      const { error: rolesError } = await supabase
+        .from('user_roles')
+        .delete()
+        .eq('user_id', userId);
+
+      if (rolesError) {
+        console.error('Error deleting user roles:', rolesError);
       }
 
       // Delete profile (this will cascade to auth.users if properly configured)
