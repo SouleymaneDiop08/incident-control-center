@@ -18,6 +18,8 @@ export function Navbar() {
     } catch (error) {
       console.error('Sign out error:', error);
       toast.error('Erreur lors de la déconnexion');
+      // Still navigate to auth page even if there's an error
+      navigate('/auth');
     }
   };
 

@@ -54,18 +54,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           }, 0);
         } else if (event === 'SIGNED_OUT') {
-          setTimeout(async () => {
-            try {
-              await supabase.rpc('log_action', {
-                action_name: 'user_signed_out',
-                target_type_name: 'auth',
-                target_id_val: user?.id || null,
-                details_val: { email: user?.email }
-              });
-            } catch (error) {
-              console.error('Error logging sign out:', error);
-            }
-          }, 0);
+          // Only log if we have a user to log for
+          if (user?.id) {
+            setTimeout(async () => {
+              try {
+                await supabase.rpc('log_action', {
+                  action_name: 'user_signed_out',
+                  target_type_name: 'auth',
+                  target_id_val: user.id,
+                  details_val: { email: user.email }
+                });
+              } catch (error) {
+                console.error('Error logging sign out:', error);
+              }
+            }, 0);
+          }
         }
         
         if (session?.user) {
@@ -123,12 +126,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
+      // Clear local state first
+      setUser(null);
+      setProfile(null);
+      setSession(null);
+      
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error('Sign out error:', error);
+        throw error;
       }
     } catch (error) {
       console.error('Sign out error:', error);
+      throw error;
     }
   };
 
