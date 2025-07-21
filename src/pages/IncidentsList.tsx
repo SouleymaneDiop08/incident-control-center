@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Navbar } from '@/components/Navbar';
@@ -38,7 +37,7 @@ interface Incident {
 }
 
 export default function IncidentsList() {
-  const { profile } = useAuth();
+  const { profile, hasRole } = useAuth();
   const queryClient = useQueryClient();
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
@@ -50,6 +49,10 @@ export default function IncidentsList() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
+  const isIT = hasRole('IT');
+  const isAdmin = hasRole('admin');
+  const isEmployee = hasRole('employé');
+
   const { data: incidents, isLoading, error, refetch } = useQuery({
     queryKey: ['incidents'],
     queryFn: async () => {
@@ -59,12 +62,8 @@ export default function IncidentsList() {
         throw new Error('Profil utilisateur non disponible');
       }
 
-      if (profile.role !== 'IT' && profile.role !== 'admin') {
-        throw new Error('Accès non autorisé');
-      }
-
       try {
-        const { data: incidentsData, error: incidentsError } = await supabase
+        let query = supabase
           .from('incidents')
           .select(`
             id,
@@ -77,7 +76,14 @@ export default function IncidentsList() {
             created_at,
             created_by,
             assigned_to
-          `)
+          `);
+
+        // Si l'utilisateur est uniquement employé, ne voir que ses incidents
+        if (isEmployee && !isIT && !isAdmin) {
+          query = query.eq('created_by', profile.id);
+        }
+
+        const { data: incidentsData, error: incidentsError } = await query
           .order('created_at', { ascending: false });
         
         if (incidentsError) {
@@ -90,6 +96,7 @@ export default function IncidentsList() {
           return [];
         }
 
+        // Récupérer les profils des créateurs
         const creatorIds = [...new Set(incidentsData.map(incident => incident.created_by))];
         const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
@@ -98,6 +105,7 @@ export default function IncidentsList() {
 
         if (profilesError) {
           console.error('Error fetching profiles:', profilesError);
+          // Ne pas faire échouer la requête si on ne peut pas récupérer les profils
         }
 
         const incidentsWithCreators = incidentsData.map(incident => ({
@@ -112,7 +120,7 @@ export default function IncidentsList() {
         throw error;
       }
     },
-    enabled: !!(profile && (profile.role === 'IT' || profile.role === 'admin')),
+    enabled: !!(profile && (isIT || isAdmin || isEmployee)),
     refetchInterval: 30000,
     staleTime: 10000,
     retry: 3,
@@ -177,7 +185,6 @@ export default function IncidentsList() {
     }
   });
 
-  // Filtrer les incidents
   const filteredIncidents = incidents?.filter(incident => {
     const matchesSearch = incident.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          incident.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -189,7 +196,6 @@ export default function IncidentsList() {
     return matchesSearch && matchesStatus && matchesCategory;
   }) || [];
 
-  // Statistiques rapides
   const stats = {
     total: incidents?.length || 0,
     nouveau: incidents?.filter(i => i.status === 'nouveau').length || 0,
@@ -282,7 +288,7 @@ export default function IncidentsList() {
     );
   }
 
-  if (profile.role !== 'IT' && profile.role !== 'admin') {
+  if (!isIT && !isAdmin && !isEmployee) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
@@ -290,12 +296,17 @@ export default function IncidentsList() {
           <div className="text-center py-12">
             <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-500" />
             <p className="text-red-600 text-lg font-semibold">Accès refusé</p>
-            <p className="text-gray-600 mt-2">Cette page est réservée aux IT et administrateurs.</p>
+            <p className="text-gray-600 mt-2">Vous n'avez pas les permissions nécessaires pour accéder à cette page.</p>
           </div>
         </div>
       </div>
     );
   }
+
+  const pageTitle = isEmployee && !isIT && !isAdmin ? 'Mes incidents' : 'Gestion des incidents';
+  const pageDescription = isEmployee && !isIT && !isAdmin 
+    ? 'Consulter vos incidents de sécurité déclarés'
+    : 'Consulter et traiter les incidents de sécurité déclarés';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -305,8 +316,8 @@ export default function IncidentsList() {
         <div className="mb-8">
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Gestion des incidents</h1>
-              <p className="text-gray-600">Consulter et traiter les incidents de sécurité</p>
+              <h1 className="text-2xl font-bold text-gray-900">{pageTitle}</h1>
+              <p className="text-gray-600">{pageDescription}</p>
             </div>
             <Button 
               onClick={() => refetch()} 
@@ -319,7 +330,6 @@ export default function IncidentsList() {
             </Button>
           </div>
 
-          {/* Statistiques rapides */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
@@ -367,7 +377,6 @@ export default function IncidentsList() {
             </Card>
           </div>
 
-          {/* Filtres et recherche */}
           <Card className="mb-6">
             <CardContent className="p-4">
               <div className="flex flex-col md:flex-row gap-4">
@@ -420,7 +429,7 @@ export default function IncidentsList() {
               </Badge>
             </CardTitle>
             <CardDescription>
-              Gérer et traiter les incidents de sécurité déclarés
+              {pageDescription}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -539,7 +548,7 @@ export default function IncidentsList() {
                             onClick={() => openIncidentDetail(incident)}
                           >
                             <Eye className="h-4 w-4 mr-1" />
-                            Gérer
+                            {isIT ? 'Gérer' : 'Voir'}
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -556,10 +565,10 @@ export default function IncidentsList() {
             <DialogHeader>
               <DialogTitle className="flex items-center space-x-2">
                 <FileText className="h-5 w-5" />
-                <span>Gestion de l'incident</span>
+                <span>{isIT ? 'Gestion de l\'incident' : 'Détails de l\'incident'}</span>
               </DialogTitle>
               <DialogDescription>
-                Consulter les détails et modifier le statut de l'incident
+                {isIT ? 'Consulter les détails et modifier le statut de l\'incident' : 'Consulter les détails de l\'incident'}
               </DialogDescription>
             </DialogHeader>
             
@@ -599,7 +608,7 @@ export default function IncidentsList() {
                             <p className="text-gray-600 text-sm">{selectedIncident.creator.email}</p>
                           </>
                         ) : (
-                          <p className="text-gray-400 italic">Utilisateur inconnu</p>
+                          <p className="text-gray-400 italic">Utilisateur inexistant</p>
                         )}
                       </div>
                     </div>
@@ -623,70 +632,76 @@ export default function IncidentsList() {
                   </div>
                 </div>
                 
-                <div className="border-t pt-6">
-                  <h3 className="font-medium text-lg mb-4">Gestion de l'incident</h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <h4 className="font-medium text-sm text-gray-500 uppercase tracking-wide mb-2">Nouveau statut</h4>
-                      <Select value={newStatus} onValueChange={(value: IncidentStatus) => setNewStatus(value)}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="nouveau">Nouveau</SelectItem>
-                          <SelectItem value="en_cours">En cours</SelectItem>
-                          <SelectItem value="resolu">Résolu</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <h4 className="font-medium text-sm text-gray-500 uppercase tracking-wide mb-2">Commentaire de traitement</h4>
-                    <Textarea
-                      value={resolutionComment}
-                      onChange={(e) => setResolutionComment(e.target.value)}
-                      placeholder="Détaillez les actions entreprises, la résolution appliquée ou les prochaines étapes..."
-                      rows={4}
-                      className="w-full"
-                    />
-                  </div>
-                  
-                  {selectedIncident.resolution_comment && (
-                    <div className="mt-4">
-                      <h4 className="font-medium text-sm text-gray-500 uppercase tracking-wide mb-2">Historique des commentaires</h4>
-                      <div className="bg-blue-50 p-3 rounded-lg">
-                        <p className="text-blue-900 text-sm whitespace-pre-wrap">{selectedIncident.resolution_comment}</p>
+                {/* Gestion de l'incident uniquement pour IT */}
+                {isIT && (
+                  <div className="border-t pt-6">
+                    <h3 className="font-medium text-lg mb-4">Gestion de l'incident</h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <h4 className="font-medium text-sm text-gray-500 uppercase tracking-wide mb-2">Nouveau statut</h4>
+                        <Select value={newStatus} onValueChange={(value: IncidentStatus) => setNewStatus(value)}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="nouveau">Nouveau</SelectItem>
+                            <SelectItem value="en_cours">En cours</SelectItem>
+                            <SelectItem value="resolu">Résolu</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
-                  )}
-                </div>
+                    
+                    <div>
+                      <h4 className="font-medium text-sm text-gray-500 uppercase tracking-wide mb-2">Commentaire de traitement</h4>
+                      <Textarea
+                        value={resolutionComment}
+                        onChange={(e) => setResolutionComment(e.target.value)}
+                        placeholder="Détaillez les actions entreprises, la résolution appliquée ou les prochaines étapes..."
+                        rows={4}
+                        className="w-full"
+                      />
+                    </div>
+                    
+                    {selectedIncident.resolution_comment && (
+                      <div className="mt-4">
+                        <h4 className="font-medium text-sm text-gray-500 uppercase tracking-wide mb-2">Historique des commentaires</h4>
+                        <div className="bg-blue-50 p-3 rounded-lg">
+                          <p className="text-blue-900 text-sm whitespace-pre-wrap">{selectedIncident.resolution_comment}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 
                 <div className="flex space-x-3 pt-4 border-t">
-                  <Button 
-                    onClick={handleUpdateIncident}
-                    className="flex-1"
-                    disabled={updateIncidentMutation.isPending}
-                  >
-                    {updateIncidentMutation.isPending ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        Mise à jour...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Mettre à jour l'incident
-                      </>
-                    )}
-                  </Button>
+                  {isIT && (
+                    <Button 
+                      onClick={handleUpdateIncident}
+                      className="flex-1"
+                      disabled={updateIncidentMutation.isPending}
+                    >
+                      {updateIncidentMutation.isPending ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          Mise à jour...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Mettre à jour l'incident
+                        </>
+                      )}
+                    </Button>
+                  )}
                   <Button 
                     variant="outline" 
                     onClick={() => setIsDetailDialogOpen(false)}
                     disabled={updateIncidentMutation.isPending}
+                    className={isIT ? '' : 'flex-1'}
                   >
-                    Annuler
+                    {isIT ? 'Annuler' : 'Fermer'}
                   </Button>
                 </div>
               </div>

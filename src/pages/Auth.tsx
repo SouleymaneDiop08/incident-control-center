@@ -10,31 +10,18 @@ import { Shield, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Auth() {
-  const { user, loading, signIn } = useAuth();
+  const { user, signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Only redirect if we're sure we have a user and not loading
-  if (!loading && user) {
+  if (user) {
     return <Navigate to="/dashboard" replace />;
-  }
-
-  // Show loading while auth state is being determined
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-2 text-gray-600">Chargement...</p>
-        </div>
-      </div>
-    );
   }
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
+    setLoading(true);
 
     try {
       const { error } = await signIn(email, password);
@@ -48,7 +35,7 @@ export default function Auth() {
         description: 'Une erreur est survenue lors de la connexion'
       });
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
 
@@ -111,9 +98,9 @@ export default function Auth() {
               <Button
                 type="submit"
                 className="w-full"
-                disabled={isSubmitting}
+                disabled={loading}
               >
-                {isSubmitting ? 'Connexion...' : 'Se connecter'}
+                {loading ? 'Connexion...' : 'Se connecter'}
               </Button>
             </form>
           </CardContent>

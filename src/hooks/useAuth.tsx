@@ -11,7 +11,8 @@ interface Profile {
   email: string;
   first_name: string | null;
   last_name: string | null;
-  role: UserRole;
+  role: UserRole; // Maintenu pour compatibilité
+  roles?: UserRole[]; // Nouveau: tableau des rôles
 }
 
 interface AuthContextType {
@@ -21,6 +22,8 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
+  hasRole: (role: UserRole) => boolean;
+  hasRoleOrHigher: (minRole: UserRole) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -30,6 +33,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const hasRole = (role: UserRole): boolean => {
+    if (!profile?.roles) return profile?.role === role;
+    return profile.roles.includes(role);
+  };
+
+  const hasRoleOrHigher = (minRole: UserRole): boolean => {
+    if (!profile?.roles) {
+      // Logique de fallback avec l'ancien système
+      if (minRole === 'employé') return true;
+      if (minRole === 'IT') return profile?.role === 'IT' || profile?.role === 'admin';
+      if (minRole === 'admin') return profile?.role === 'admin';
+      return false;
+    }
+    
+    if (minRole === 'employé') return true;
+    if (minRole === 'IT') return profile.roles.includes('IT') || profile.roles.includes('admin');
+    if (minRole === 'admin') return profile.roles.includes('admin');
+    return false;
+  };
 
   useEffect(() => {
     // Set up auth state listener
@@ -54,38 +77,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           }, 0);
         } else if (event === 'SIGNED_OUT') {
-          // Only log if we have a user to log for
-          if (user?.id) {
-            setTimeout(async () => {
-              try {
-                await supabase.rpc('log_action', {
-                  action_name: 'user_signed_out',
-                  target_type_name: 'auth',
-                  target_id_val: user.id,
-                  details_val: { email: user.email }
-                });
-              } catch (error) {
-                console.error('Error logging sign out:', error);
-              }
-            }, 0);
-          }
+          setTimeout(async () => {
+            try {
+              await supabase.rpc('log_action', {
+                action_name: 'user_signed_out',
+                target_type_name: 'auth',
+                target_id_val: user?.id || null,
+                details_val: { email: user?.email }
+              });
+            } catch (error) {
+              console.error('Error logging sign out:', error);
+            }
+          }, 0);
         }
         
         if (session?.user) {
-          // Fetch user profile
+          // Fetch user profile and roles
           setTimeout(async () => {
             try {
-              const { data: profile, error } = await supabase
+              const { data: profile, error: profileError } = await supabase
                 .from('profiles')
                 .select('*')
                 .eq('id', session.user.id)
                 .single();
               
-              if (error) {
-                console.error('Error fetching profile:', error);
-              } else {
-                setProfile(profile);
+              if (profileError) {
+                console.error('Error fetching profile:', profileError);
+                setLoading(false);
+                return;
               }
+
+              // Fetch user roles
+              const { data: userRoles, error: rolesError } = await supabase
+                .from('user_roles')
+                .select('role')
+                .eq('user_id', session.user.id);
+
+              if (rolesError) {
+                console.error('Error fetching user roles:', rolesError);
+              }
+
+              const roles = userRoles?.map(r => r.role) || [];
+              
+              setProfile({
+                ...profile,
+                roles: roles.length > 0 ? roles : [profile.role] // Fallback vers le rôle principal
+              });
             } catch (error) {
               console.error('Error in profile fetch:', error);
             } finally {
@@ -109,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [user?.id, user?.email]);
 
   const signIn = async (email: string, password: string) => {
     try {
@@ -126,19 +163,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
-      // Clear local state first
-      setUser(null);
-      setProfile(null);
-      setSession(null);
-      
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error('Sign out error:', error);
-        throw error;
       }
     } catch (error) {
       console.error('Sign out error:', error);
-      throw error;
     }
   };
 
@@ -149,7 +179,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       loading,
       signIn,
-      signOut
+      signOut,
+      hasRole,
+      hasRoleOrHigher
     }}>
       {children}
     </AuthContext.Provider>

@@ -16,7 +16,7 @@ export function ProtectedRoute({
   allowedRoles,
   redirectTo = '/auth' 
 }: ProtectedRouteProps) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, hasRole } = useAuth();
 
   if (loading) {
     return (
@@ -30,7 +30,7 @@ export function ProtectedRoute({
     return <Navigate to={redirectTo} replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(profile.role)) {
+  if (allowedRoles && !allowedRoles.some(role => hasRole(role))) {
     return <Navigate to="/dashboard" replace />;
   }
 
